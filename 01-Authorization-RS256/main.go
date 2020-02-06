@@ -9,23 +9,21 @@ import (
 	"os"
 	"strings"
 
-	// made some module names explicit here for clarity
-	//
 	// "This module lets you authenticate HTTP requests using JWT tokens
 	// in your Go Programming Language applications. JWTs are typically
 	// used to protect API endpoints, and are often issued using OpenID Connect."
-	jwtmiddleware "github.com/auth0/go-jwt-middleware"
-	"github.com/codegangsta/negroni"
-
+	"github.com/auth0/go-jwt-middleware"
 	// "This library supports the parsing and verification as well as the generation
 	// and signing of JWTs. Current supported signing algorithms are HMAC SHA, RSA,
 	// RSA-PSS, and ECDSA, though hooks are present for adding your own."
-	jwt "github.com/dgrijalva/jwt-go"
+	"github.com/codegangsta/negroni"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 	"github.com/rs/cors"
 )
 
+// Response is a simple data model for the JSON response
 type Response struct {
 	Message string `json:"message"`
 }
@@ -36,6 +34,9 @@ type Jwks struct {
 	Keys []JSONWebKeys `json:"keys"`
 }
 
+// JSONWebKeys (maybe shouldn't be plural?) is a data model based on
+// the JSONWebKey spec.
+// https://auth0.com/docs/tokens/references/jwks-properties
 type JSONWebKeys struct {
 	Kty string   `json:"kty"`
 	Kid string   `json:"kid"`
@@ -148,6 +149,9 @@ func main() {
 	http.ListenAndServe("0.0.0.0:3010", handler)
 }
 
+// this the data model for the JWT claims, composed
+// from standard JWT claims with the `Scope` claim
+// added.
 type CustomClaims struct {
 	Scope string `json:"scope"`
 	jwt.StandardClaims
@@ -161,19 +165,28 @@ type CustomClaims struct {
 	// Subject   string `json:"sub,omitempty"`
 }
 
+// check to make sure the token fits a given scope (permissions)
 func checkScope(scope string, tokenString string) bool {
+	// parse the token using the provided custom claims. the callback is
+	// used to get the key for this JWT
+	// https://godoc.org/github.com/dgrijalva/jwt-go#ParseWithClaims
 	token, _ := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+		// create pem cert from token cert
 		cert, err := getPemCert(token)
 		if err != nil {
 			return nil, err
 		}
+		// parse pem into an RSA public key
 		result, _ := jwt.ParseRSAPublicKeyFromPEM([]byte(cert))
 		return result, nil
 	})
 
+	// retrieve claims as type CustomClaims
 	claims, ok := token.Claims.(*CustomClaims)
 
 	hasScope := false
+	// check if the given scope exists with the `Scope`
+	// claim from the token
 	if ok && token.Valid {
 		result := strings.Split(claims.Scope, " ")
 		for i := range result {
@@ -227,6 +240,7 @@ func getPemCert(token *jwt.Token) (string, error) {
 	return cert, nil
 }
 
+// form a JSON response from the given data
 func responseJSON(message string, w http.ResponseWriter, statusCode int) {
 	response := Response{message}
 
